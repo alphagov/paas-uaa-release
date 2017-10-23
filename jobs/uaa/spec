@@ -8,6 +8,7 @@ templates:
   install_crt: bin/install_crt
   dns_health_check.erb: bin/dns_health_check
   health_check: bin/health_check
+  nginx_health_check: bin/nginx_health_check
   install_uaa_crt: bin/install_uaa_crt
   pre-start: bin/pre-start
   post-start: bin/post-start
