@@ -1,5 +1,5 @@
 ---
-final_name: uaa-customized
+final_name: paas-uaa
 blobstore:
   provider: s3
   options:
