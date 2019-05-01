@@ -1,0 +1,108 @@
+#!/usr/bin/env ruby
+require 'digest'
+require 'fileutils'
+require 'yaml'
+
+def usage
+  puts <<~USAGE
+    How to use:
+
+    Run it like:
+      sync-blobs $url $sha $path-to-blobs-yaml
+
+    Example:
+      sync-blobs \\
+        'https://bosh.io/d/github.com/cloudfoundry/uaa-release?v=72.0' \\
+        '7130e5ac640ed1e1f52c09e76995e4d0680f3b45' \\
+        'config/blobs.yml'
+  USAGE
+  exit
+end
+
+if ARGV.length != 3
+  usage
+end
+
+URL = ARGV[0]
+SHA = ARGV[1]
+BLOBS = YAML.load_file(ARGV[2].chomp)
+
+begin
+  tmpdir = "/tmp/#{rand(36**8).to_s(36)}"
+  FileUtils.mkdir_p(tmpdir)
+
+  downloads_dir = File.join(tmpdir, "downloads")
+  archive_dir = File.join(tmpdir, "archive")
+  inflate_dir = File.join(tmpdir, "inflate")
+  FileUtils.mkdir_p(downloads_dir)
+  FileUtils.mkdir_p(archive_dir)
+  FileUtils.mkdir_p(inflate_dir)
+
+  release_filepath = File.join(downloads_dir, 'release.tar.gz')
+
+  puts <<~INFO
+    Downloads directory: #{downloads_dir}
+    Archive directory:   #{archive_dir}
+    Inflate directory:   #{inflate_dir}
+  INFO
+
+  puts "Downloading #{URL}"
+  `curl -fL "#{URL}" > "#{release_filepath}"`
+  abort unless $?.success?
+
+  actual_sha = Digest::SHA1.file(release_filepath).hexdigest
+
+  puts <<~INFO
+    Downloaded #{URL}
+    Supplied SHA1 #{SHA.inspect} ; Actual SHA1 #{actual_sha.inspect}
+  INFO
+
+  abort unless actual_sha.chomp == SHA.chomp
+
+  puts "Expanding #{release_filepath} into #{archive_dir}"
+  Process.wait(spawn(
+    "tar zxvf '#{release_filepath}' -C '#{archive_dir}'",
+    in: STDIN, out: STDOUT, err: STDERR,
+  ))
+  abort unless $?.success?
+
+  Dir.glob([
+    "#{archive_dir}/packages/*.tgz",
+    "#{archive_dir}/packages/*.tar.gz",
+  ]).each do |package|
+    package_dir = File.join(
+      inflate_dir,
+      File.basename(package, File.extname(package)),
+    )
+    puts "Inflating #{package} into #{package_dir}"
+    FileUtils.mkdir_p(package_dir)
+    Process.wait(spawn(
+      "tar zxvf '#{package}' -C '#{package_dir}'",
+      in: STDIN, out: STDOUT, err: STDERR,
+    ))
+    abort unless $?.success?
+  end
+
+  puts "Checking blobs in #{inflate_dir}"
+  BLOBS.each do |blob_path, blob_props|
+    blob_name = File.basename(blob_path)
+    match = `find '#{inflate_dir}' -name #{blob_name}`.lines.map(&:chomp).first
+
+    abort "Could not find #{blob_name} within #{inflate_dir}" if match.nil?
+
+    expected_sha = blob_props.dig('sha')
+    actual_sha   = Digest::SHA1.file(match).hexdigest
+    puts "#{match} ; expected #{expected_sha} ; actual #{actual_sha}"
+    abort unless expected_sha == actual_sha
+
+    puts "Uploading blob to blob store"
+    Process.wait(spawn(
+      "bosh add-blob '#{match}' '#{blob_path}'",
+      in: STDIN, out: STDOUT, err: STDERR,
+    ))
+    abort unless $?.success?
+  end
+
+ensure
+  FileUtils.rm_r(tmpdir) if tmpdir.match?(%r{^/tmp/})
+end
