@@ -113,10 +113,6 @@ Add the following properties to your manifest:
    JDK - https://java-buildpack.cloudfoundry.org/openjdk-jdk/trusty/x86_64/index.yml
    
    JRE - https://java-buildpack.cloudfoundry.org/openjdk/trusty/x86_64/index.yml
-   
-   Mac JDK - https://java-buildpack.cloudfoundry.org/openjdk-jdk/mountainlion/x86_64/index.yml
-   
-   Mac JRE - https://java-buildpack.cloudfoundry.org/openjdk/mountainlion/x86_64/index.yml
 
 ## Acknowledgements
 
