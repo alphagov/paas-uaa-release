@@ -9,11 +9,11 @@ disableInternalAuth: false
 disableInternalUserManagement: false
 issuer:
   uri: http://test.uaa.url
-spring_profiles: sqlserver
+spring_profiles: postgresql
 logging:
-  config: "/var/vcap/jobs/uaa/config/log4j.properties"
+  config: "/var/vcap/jobs/uaa/config/log4j2.properties"
 database:
-  url: jdbc:sqlserver://10.244.0.30:1433;databaseName=uaadb;
+  url: jdbc:postgresql://10.244.0.30:1433/uaadb?sslmode=verify-full&sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory
   username: uaaadmin
   password: admin
   maxactive: 100
@@ -115,13 +115,16 @@ scim:
   userids_enabled: true
   user:
     override: true
-require_https: true
 assetBaseUrl: "/resources/oss"
 logout:
   redirect:
     url: "/login"
     parameter:
       disable: false
+
+require_https: true
+https_port: 8443
+
 uaa:
   url: http://test.uaa.url
   limitedFunctionality:
@@ -145,6 +148,9 @@ uaa:
       - OPTIONS
   shutdown:
     sleep: 5000
+  oauth:
+    redirect_uri:
+      allow_unsafe_matching: true
 
 links:
   global:

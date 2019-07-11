@@ -86,10 +86,10 @@ Add the following properties to your manifest:
    Make sure you modify the director uuid in the manifest to match yours 
 
 
-       bosh upload-stemcell https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-trusty-go_agent --skip-if-exists
+       bosh upload-stemcell <stemcell-url> # use latest stemcell from here: https://bosh.io/stemcells/bosh-warden-boshlite-ubuntu-xenial-go_agent
        bosh create-release
        bosh upload-release
-       bosh -n -e vbox -d uaa  deploy \
+       bosh -n -e vbox -d uaa deploy \
          templates/uaa-deployment.yml \
          --vars-store creds.yml \
          -v system_domain=uaa-standalone.com
@@ -107,16 +107,10 @@ Add the following properties to your manifest:
 
 ## Java Runtime Environments
 
-   Java Runtime Environments are gracefully supplied by the Cloud Foundry
-   Java Buildpack Team
+   Java Runtime Environments are gracefully supplied by the Cloud Foundry Java Buildpack Team
 
    JDK - https://java-buildpack.cloudfoundry.org/openjdk-jdk/trusty/x86_64/index.yml
-   
    JRE - https://java-buildpack.cloudfoundry.org/openjdk/trusty/x86_64/index.yml
-   
-   Mac JDK - https://java-buildpack.cloudfoundry.org/openjdk-jdk/mountainlion/x86_64/index.yml
-   
-   Mac JRE - https://java-buildpack.cloudfoundry.org/openjdk/mountainlion/x86_64/index.yml
 
 ## Acknowledgements
 

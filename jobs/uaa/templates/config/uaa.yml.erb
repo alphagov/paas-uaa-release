@@ -135,8 +135,8 @@
   protocol = p('login.protocol')
   uaa_db_scheme = p('uaadb.db_scheme')
   uaa_db_scheme = uaa_db_scheme == 'postgres' ? 'postgresql' : uaa_db_scheme
+  raise ArgumentError, 'Please select either mysql or postgres for uaadb.db_scheme' unless uaa_db_scheme == 'postgresql' || uaa_db_scheme == 'mysql'
   issuer_uri = p('uaa.issuer', p('uaa.url'))
-  uaa_db_tls_enabled = p('uaadb.tls_enabled')
   uaa_db_address = nil
   if_p('uaadb.address') do |address|
     uaa_db_address = address
@@ -147,6 +147,8 @@
       raise ArgumentError, 'Required uaadb address configuration not specified. Please specify uaadb.address or check your bosh linked database configuration.'
     end
   end
+
+  raise ArgumentError, 'Invalid value for uaa.client.redirect_uri.matching_mode. Valid options are legacy or exact.' unless ['legacy', 'exact'].include?(p('uaa.client.redirect_uri.matching_mode'))
 
   spring_profiles = uaa_db_scheme
   if p_opt('uaa.ldap.enabled')
@@ -167,7 +169,7 @@
     },
     'spring_profiles' => spring_profiles,
     'logging' => {
-      'config' => '/var/vcap/jobs/uaa/config/log4j.properties'
+      'config' => '/var/vcap/jobs/uaa/config/log4j2.properties'
     },
     'database' => {
       'url' =>  "jdbc:#{uaa_db_scheme}://#{uaa_db_address}:#{p('uaadb.port')}/#{uaa_db['name']}",
@@ -221,25 +223,44 @@
   }
   params['delete'] = p('uaa.delete') if p_opt('uaa.delete')
 
-
-  if uaa_db_scheme == 'sqlserver' then
-    params['database']['url'] = "jdbc:#{uaa_db_scheme}://#{uaa_db_address}:#{p('uaadb.port')};databaseName=#{uaa_db['name']};"
+  unless ['enabled', 'enabled_skip_hostname_validation', 'enabled_skip_all_validation', 'disabled'].include?(p('uaadb.tls'))
+    raise ArgumentError, 'Invalid value for uaadb.tls. Valid options are enabled, enabled_skip_hostname_validation, enabled_skip_all_validation, disabled.'
   end
 
-  if uaa_db_tls_enabled
-    if uaa_db_scheme == 'postgresql'
-      params['database']['url'] += '?ssl=true'
+  if_p('uaadb.tls_enabled') do
+    raise ArgumentError, 'uaadb.tls_enabled is no longer supported. Please use uaadb.tls instead.'
+  end
+  if_p('uaadb.skip_ssl_validation') do
+    raise ArgumentError, 'uaadb.skip_ssl_validation is no longer supported. Please use uaadb.tls instead.'
+  end
 
-      if_p('uaadb.skip_ssl_validation') do |db_skip_ssl_validation|
-          params['database']['url'] += '&sslfactory=org.postgresql.ssl.NonValidatingFactory' if db_skip_ssl_validation
-      end
-    elsif uaa_db_scheme == 'mysql'
-      params['database']['url'] += '?useSSL=true' +  "&trustServerCertificate=#{p('uaadb.skip_ssl_validation')}"
+  if uaa_db_scheme == 'mysql'
+    params['database']['url'] += case p('uaadb.tls')
+      when 'enabled'
+        '?useSSL=true'
+      when 'enabled_skip_hostname_validation'
+        '?useSSL=true&disableSslHostnameVerification=true'
+      when 'enabled_skip_all_validation'
+        '?useSSL=true&trustServerCertificate=true'
+      when 'disabled'
+        '?useSSL=false'
+    end
+    unless p('uaadb.tls') == 'disabled'
       if_p('uaadb.tls_protocols') do |dbTlsProtocol|
         params['database']['url'] += '&enabledSslProtocolSuites=' + dbTlsProtocol
       end
-    elsif uaa_db_scheme == 'sqlserver'
-      params['database']['url'] += 'encrypt=true;' + "trustServerCertificate=#{p('uaadb.skip_ssl_validation')};"
+    end
+
+  elsif uaa_db_scheme == 'postgresql'
+    params['database']['url'] += case p('uaadb.tls')
+      when 'enabled'
+        '?sslmode=verify-full&sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory'
+      when 'enabled_skip_hostname_validation'
+        '?sslmode=verify-ca&sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory'
+      when 'enabled_skip_all_validation'
+        '?sslmode=require'
+      when 'disabled'
+        '?sslmode=disable'
     end
   end
 
@@ -366,10 +387,9 @@
 
   oauth['user']['authorities'] = p('uaa.user.authorities')
 
-  if p_opt('uaa.client')
-      oauth['client'] = {}
-  end
   if p_opt('uaa.client.secret.policy')
+    oauth['client'] ||= {}
+
     oauth['client']['secret'] = {
       'policy' => {
         'minLength' => p('uaa.client.secret.policy.minLength', 0),
@@ -591,7 +611,8 @@
   login_url = p('login.url', login_entityBaseUrl)
 
   params = params.merge({
-    'require_https' => p('uaa.require_https'),
+    'require_https' => true,
+    'https_port' => p('uaa.ssl.port'),
     'assetBaseUrl' => p('login.asset_base_url'),
     'logout' => {
       'redirect' => {
@@ -611,6 +632,11 @@
         'whitelist' => {
           'endpoints' => p('uaa.limitedFunctionality.whitelist.endpoints'),
           'methods' => p('uaa.limitedFunctionality.whitelist.methods')
+        }
+      },
+      'oauth' => {
+        'redirect_uri' => {
+          'allow_unsafe_matching' => p('uaa.client.redirect_uri.matching_mode') == 'legacy'
         }
       }
     },

@@ -11,9 +11,9 @@ issuer:
   uri: http://all-properties-set:8888/uaa
 spring_profiles: mysql,ldap
 logging:
-  config: "/var/vcap/jobs/uaa/config/log4j.properties"
+  config: "/var/vcap/jobs/uaa/config/log4j2.properties"
 database:
-  url: jdbc:mysql://10.244.0.30:5524/uaadb?useSSL=true&trustServerCertificate=false&enabledSslProtocolSuites=TLSv1.2
+  url: jdbc:mysql://10.244.0.30:5524/uaadb?useSSL=true&enabledSslProtocolSuites=TLSv1.2
   username: uaaadmin
   password: admin
   maxactive: 101
@@ -200,7 +200,6 @@ scim:
       - internal_group3
       - internal_group4
       - internal_group5
-require_https: false
 ldap:
   override: false
   ldapdebug: Ldap configured through UAA
@@ -248,6 +247,10 @@ logout:
     url: "/"
     parameter:
       disable: false
+
+require_https: true
+https_port: 33333
+
 uaa:
   url: http://all-properties-set:8888/uaa
   limitedFunctionality:
@@ -262,6 +265,9 @@ uaa:
       - HEAD
   shutdown:
     sleep: 10000
+  oauth:
+    redirect_uri:
+      allow_unsafe_matching: true
 
 links:
   global:
