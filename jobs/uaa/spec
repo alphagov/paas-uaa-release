@@ -25,14 +25,13 @@ templates:
   bbr/pre-backup-lock.sh.erb: bin/bbr/pre-backup-lock
   bbr/pre-restore-lock.sh.erb: bin/bbr/pre-restore-lock
   bbr/post-backup-unlock.sh.erb: bin/bbr/post-backup-unlock
-  bbr/post-restore-unlock.sh.erb: bin/bbr/post-restore-unlock
+  bbr/post-restore-unlock.sh: bin/bbr/post-restore-unlock
 
 provides:
 - name: uaa_db
   type: uaa_db
   properties:
   - uaadb
-  - release_level_backup
 
 - name: uaa_keys
   type: uaa_keys
@@ -49,7 +48,6 @@ consumes:
   optional: true
 
 packages:
-  - uaa_utils
   - uaa
 
 properties:
@@ -67,8 +65,7 @@ properties:
 
   #backup properties
   release_level_backup:
-    default: false
-    description: "Set to true to include UAA database in backup and restore operations"
+    description: "DEPRECATED: Do not use this property. Use the corresponding property in bbr-uaadb."
 
   #uaa database host configuration
   uaadb.address:
