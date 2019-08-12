@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -e -x
+set -eux
 
 cd ${BUILD_DIR}
 
@@ -23,9 +23,13 @@ fi
 #setup Java path
 export PATH=$JAVA_HOME/bin:$PATH
 
+if [ -z ${UAA_VERSION:-} ] && [ ! -z ${VERSION:-} ]; then
+  export UAA_VERSION="$VERSION"
+fi
+
 #build cloud foundry UAA war
 cd ${BUILD_DIR}/uaa
-GIT_DIR=$(find $RELEASE_DIR -path "*/modules/src/uaa") ./gradlew :clean :assemble
+GIT_DIR=$(find $RELEASE_DIR -path "*/modules/src/uaa") ./gradlew :clean :assemble -Pversion=${UAA_VERSION}
 cp uaa/build/libs/cloudfoundry-identity-uaa-*.war ${BUILD_DIR}/uaa/cloudfoundry-identity-uaa.war
 cp statsd/build/libs/cloudfoundry-identity-statsd-*.war ${BUILD_DIR}/uaa/cloudfoundry-identity-statsd.war
 
