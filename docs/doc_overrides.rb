@@ -82,6 +82,22 @@ module DocOverrides
 
       values = result[k].is_a?(Array) ? result[k] : [result[k]]
       values.each do |v|
+        # TODO - This is ugly. the doc overrides doesn't support
+        # hard coded values that are not read from
+        # the p('property.name') function, for example
+        # 'logout' => {
+        #     'redirect' => {
+        #         'url' => p('login.logout.redirect.url'),
+        #         'parameter' => {
+        #             'disable' => false
+        #         }
+        #     }
+        # },
+
+        if !!v == v
+          v = MockProperty.new('login.logout.redirect.parameter.disable')
+        end
+
         if v.is_a? String
           source_matches = v.scan /<(.+?)>/
           pp = source_matches.map { |match| match[0] }

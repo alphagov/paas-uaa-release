@@ -1,8 +1,14 @@
 ---
 name: uaa
 
+encryption:
+  active_key_label: key1
+  encryption_keys:
+  - label: key1
+    passphrase: my-passphrase
+
 database:
-  url: jdbc:postgresql://10.244.0.30:5524/uaadb?ssl=true
+  url: jdbc:postgresql://10.244.0.30:5524/uaadb?sslmode=verify-full&sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory
   username: uaaadmin
   password: "admin"
   maxactive: 100
@@ -16,7 +22,7 @@ database:
 spring_profiles: postgresql
 
 logging:
-  config: /var/vcap/jobs/uaa/config/log4j.properties
+  config: /var/vcap/jobs/uaa/config/log4j2.properties
 
 jwt:
   token:
@@ -58,6 +64,7 @@ jwt:
       format: jwt
 
 authentication:
+  enableUriEncodingCompatibilityMode: false
   policy:
     lockoutAfterFailures: 5
     countFailuresWithinSeconds: 1200
@@ -201,10 +208,26 @@ zones:
     hostnames:
       - uaa.service.cf.internal
 
-require_https: false
+require_https: true
+https_port: 8443
 
 uaa:
   url: https://uaa.bosh-lite.com
+  limitedFunctionality:
+    statusFile: /var/vcap/data/uaa/bbr_limited_mode.lock
+    whitelist:
+      endpoints:
+      - /oauth/authorize/**
+      - /oauth/token/**
+      - /check_token/**
+      methods:
+      - GET
+      - HEAD
+  shutdown:
+    sleep: 5000
+  oauth:
+    redirect_uri:
+      allow_unsafe_matching: true
 
 links:
   global:
@@ -230,11 +253,15 @@ logout:
   redirect:
     url: /login
     parameter:
-      disable: true
+      disable: false
 
 login:
+  mfa:
+    enabled: true
+    providerName: myExampleProvider
   url: https://login.bosh-lite.com
   selfServiceLinksEnabled: true
+  defaultIdentityProvider: uaa
   idpDiscoveryEnabled: false
   accountChooserEnabled: false
   entityBaseURL: https://login.bosh-lite.com
@@ -286,6 +313,7 @@ login:
     signMetaData: true
     signRequest: true
     wantAssertionSigned: true
+    disableInResponseToCheck: false
     signatureAlgorithm: SHA256
     socket:
       connectionManagerTimeout: 10000
@@ -330,3 +358,9 @@ login:
         providerDescription: 'Human readable description of this provider'
   authorize:
     url: https://uaa.bosh-lite.com/oauth/authorize
+
+servlet:
+  session-store: memory
+  idle-timeout: 1800
+  session-cookie:
+    max-age: -1

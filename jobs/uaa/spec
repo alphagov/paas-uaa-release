@@ -4,27 +4,40 @@ name: uaa
 description: "The UAA is the identity management service for Cloud Foundry. It's primary role is as an OAuth2 provider, issuing tokens for client applications to use when they act on behalf of Cloud Foundry users. It can also authenticate users with their Cloud Foundry credentials, and can act as an SSO service using those credentials (or others). It has endpoints for managing user accounts and for registering OAuth2 clients, as well as various other management functions."
 
 templates:
-  uaa_ctl.erb: bin/uaa_ctl
-  install_crt: bin/install_crt
-  dns_health_check.erb: bin/dns_health_check
-  health_check: bin/health_check
-  install_uaa_crt: bin/install_uaa_crt
-  pre-start: bin/pre-start
-  post-start: bin/post-start
-  backup.erb: bin/bbr/backup
-  restore.erb: bin/bbr/restore
+  bin/uaa: bin/uaa
+  bin/configure_newrelic.erb: bin/configure_newrelic
+  bin/configure_proxy.erb: bin/configure_proxy
+  bin/health_check.erb: bin/health_check
+  bin/pre-start.erb: bin/pre-start
+  bin/post-start: bin/post-start
 
-  uaa.yml.erb: config/uaa.yml
-  newrelic.yml.erb: config/newrelic.yml
-  varz.yml: config/varz.yml
-  log4j.properties.erb: config/log4j.properties
-  varz.log4j.properties: config/varz.log4j.properties
-  tomcat.logging.properties: config/tomcat/logging.properties
-  tomcat.server.xml.erb: config/tomcat/server.xml
-  tomcat.context.xml.erb: config/tomcat/context.xml
-  ldap.crt.erb: config/ldap.crt
-  messages.properties.erb: config/messages.properties
-  uaa.crt.erb: config/uaa.crt
+  config/uaa.yml.erb: config/uaa.yml
+  config/bpm.yml.erb: config/bpm.yml
+  config/newrelic.yml.erb: config/newrelic.yml
+  config/log4j2.properties.erb: config/log4j2.properties
+  config/ldap.crt.erb: config/ldap.crt
+  config/messages.properties.erb: config/messages.properties
+  config/uaa.crt.erb: config/uaa.crt
+  config/tomcat/tomcat.logging.properties: config/tomcat/logging.properties
+  config/tomcat/tomcat.server.xml.erb: config/tomcat/server.xml
+  config/tomcat/tomcat.context.xml.erb: config/tomcat/context.xml
+
+  bbr/pre-backup-lock.sh.erb: bin/bbr/pre-backup-lock
+  bbr/pre-restore-lock.sh.erb: bin/bbr/pre-restore-lock
+  bbr/post-backup-unlock.sh.erb: bin/bbr/post-backup-unlock
+  bbr/post-restore-unlock.sh: bin/bbr/post-restore-unlock
+
+provides:
+- name: uaa_db
+  type: uaa_db
+  properties:
+  - uaadb
+
+- name: uaa_keys
+  type: uaa_keys
+  properties:
+  - encryption.active_key_label
+  - encryption.encryption_keys
 
 consumes:
 - name: router
@@ -35,17 +48,86 @@ consumes:
   optional: true
 
 packages:
-  - uaa_utils
   - uaa
 
 properties:
+  encryption.encryption_keys:
+    description: "Map of key labels and encryption passphrases that will be used to create keys using a Key Derivation Function. All passphrase values must be at least 8 characters long."
+    example: |
+      - label: 'key-1'
+        passphrase: 'MY-PASSPHRASE'
+      - label: 'key-2'
+        passphrase: 'MY-PASSPHRASE-TWO'
+
+  encryption.active_key_label:
+    description: "The key label of the encryption passphrase that will be used to create the key using a Key Derivation Function for encrypting new data within the UAA database."
+    example: 'key-1'
+
+  #backup properties
+  release_level_backup:
+    description: "DEPRECATED: Do not use this property. Use the corresponding property in bbr-uaadb."
+
+  #uaa database host configuration
+  uaadb.address:
+    description: |
+      The UAA database IP address. If this property is not set, the UAA will look for a `database` link
+      and use the first instance address it can find in the list
+  uaadb.databases:
+    description: |
+      The list of databases used in UAA database including tag/name. The UAA will always look for the `uaa` tag
+      and use the database name from that tag
+    example:
+      - name: uaa
+        tag: uaa
+  uaadb.db_scheme:
+    description: "Database scheme for UAA DB. Supported schemes: postgres, mysql"
+  uaadb.port:
+    description: "The UAA database Port"
+  uaadb.tls:
+    description: |
+      Use TLS connection for UAA database.
+      Valid options are:
+      enabled (use TLS with full certificate validation),
+      enabled_skip_hostname_validation (use TLS but skip validation of common and alt names in the host certificate),
+      enabled_skip_all_validation (use TLS but do not validate anything about the host certificate),
+      disabled (do not use TLS)
+    default: enabled
+  uaadb.tls_protocols:
+    description: |
+      If using TLS, this property can be used to narrow down the protocols used
+      by the UAA database driver.
+      This option only takes effect when using `mysql` as `uaadb.db_scheme`.
+      The default is null, the database driver will pick the protocol to use.
+      The values can be comma separated.
+      PostgreSQL defaults to TLSv1.2 through the JDBC driver.
+    example: TLSv1.2,TLSv1.1
+  uaadb.roles:
+    description: |
+      The list of database Roles used in UAA database including tag/name/password
+      The UAA will always look for the tag `admin` and use the
+      `name` and `password` properties as the database credentials
+    example:
+      - name: uaa
+        password: database-password-for-user-uaa
+        tag: admin
+
   # General server properties
   uaa.catalina_opts:
     description: "The options used to configure Tomcat"
     default: -Xmx768m -XX:MaxMetaspaceSize=256m
-  uaa.port:
-    description: "Port that uaa will accept connections on"
+  uaa.localhost_http_port:
+    description: |
+      The port on which UAA will accept HTTP traffic from the localhost machine only.
+      Only used by monit to call the /healthz endpoint.
+      Either use default or set to another value in range [1024-65535].
+      This port must not conflict with other ports configured on this VM, such as uaa.ssl.port.
     default: 8080
+  uaa.shutdown.sleep:
+    description: |
+      Used for draining connection during a graceful shutdown. When the UAA process receives a kill signal
+      it will delay the shutdown for the configured number of milliseconds. During this period,
+      the /healthz endpoint will return 503/stopping while all other endpoints continue to function.
+    default: 5000
   uaa.url:
     description: "The base url of the UAA"
   uaa.zones.internal.hostnames:
@@ -75,7 +157,14 @@ properties:
       The syntax that must adhere to documentation in https://docs.newrelic.com/docs/agents/java-agent/configuration/java-agent-configuration-config-file
       The JVM option -javaagent:/path/to/newrelic.jar will be added to Apache Tomcat's startup script
       The enablement of the NewRelic agent in the UAA is triggered by the property uaa.newrelic.common.license_key
-      The property uaa.newrelic.common.license_key must be set!
+      The property uaa.newrelic.common.license_key must be set.
+    example: |
+      uaa:
+        newrelic:
+          common:
+            app_name: ((uaa_app_name))
+            license_key: ((uaa_license_key))
+
   env.http_proxy:
     description: "The http_proxy across the VMs used for all requests over http"
     example: http://test.proxy:8080
@@ -93,16 +182,43 @@ properties:
   uaa.logging_use_rfc3339:
     description: "Sets the time format for log messages to be yyyy-MM-dd'T'HH:mm:ss.SSSXXX instead of yyyy-MM-dd HH:mm:ss.SSS"
     default: false
+  uaa.limitedFunctionality.statusFile:
+    description: |
+      The UAA checks for the presence of this file. If this file exists, the UAA will continue to function
+      but in limited mode. This means any authentication or token action will continue to work, but more
+      API endpoints that change configuration will return 503 UNAVAILABLE.
+      Normally, there is no need to change this value, unless you have other scripts that may rely on it
+    default: /var/vcap/data/uaa/bbr_limited_mode.lock
+  uaa.limitedFunctionality.whitelist.endpoints:
+    description: "Set the whitelisted API for UAA in degraded mode. Methods and Endpoints are unioned with each other: i.e. all methods are permitted for a whitelisted endpoint, and all endpoints are permitted for a whitelisted method"
+    default:
+      - /oauth/authorize/**
+      - /oauth/token/**
+      - /check_token/**
+      - /login/**
+      - /login.do
+      - /logout/**
+      - /logout.do
+      - /saml/**
+      - /autologin/**
+      - /authenticate/**
+      - /idp_discovery/**
+  uaa.limitedFunctionality.whitelist.methods:
+    description: "Set the whitelisted API for UAA in degraded mode. Methods and Endpoints are unioned with each other: i.e. all methods are permitted for a whitelisted endpoint, and all endpoints are permitted for a whitelisted method"
+    default:
+      - GET
+      - HEAD
+      - OPTIONS
 
   # SSL
   login.protocol:
     description: "Scheme to use for HTTP communication (http/https)"
     default: https
-  uaa.require_https:
-    description: "Request came in on a secure connection. Expect the load balancer/proxy to set the proper headers (x-forwarded-for, x-forwarded-proto)"
-    default: true
   uaa.ssl.port:
-    description: If this property Tomcat will listen to this port and expect https traffic. If set to -1, Tomcat will not listen for https traffic.
+    description: |
+      The port on which UAA will accept HTTPS traffic.
+      Either use default or set to another value in range [1024-65535].
+      This port must not conflict with other ports configured on this VM, such as uaa.localhost_http_port.
     default: 8443
   uaa.ssl.protocol_header:
     description: The header to look for to determine if ssl termination was performed by a front end load balancer.
@@ -149,6 +265,29 @@ properties:
       oyCimvs0CgUOknhTmJJSkwJBAPaI298JxTnWncC3Zu7d5QYCJXjU403Aj4LdcVeI
       6A15MzQdj5Hm82vlmpC4LzXofLjiN4E5ZLluzEw+1TjRE7c=
       -----END RSA PRIVATE KEY-----
+  uaa.ca_certs:
+    description: "Array of CA certificates to load into the UAA's truststore"
+    example:
+      - |
+        -----BEGIN CERTIFICATE-----
+        MIIDAjCCAmugAwIBAgIJAJtrcBsKNfWDMA0GCSqGSIb3DQEBCwUAMIGZMQswCQYD
+        VQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTEWMBQGA1UEBwwNU2FuIEZyYW5j
+        aXNjbzEQMA4GA1UECgwHUGl2b3RhbDERMA8GA1UECwwISWRlbnRpdHkxFjAUBgNV
+        BAMMDU1hcmlzc2EgS29hbGExIDAeBgkqhkiG9w0BCQEWEW1rb2FsYUBwaXZvdGFs
+        LmlvMB4XDTE1MDczMDE5Mzk0NVoXDTI1MDcyOTE5Mzk0NVowgZkxCzAJBgNVBAYT
+        AlVTMRMwEQYDVQQIDApDYWxpZm9ybmlhMRYwFAYDVQQHDA1TYW4gRnJhbmNpc2Nv
+        MRAwDgYDVQQKDAdQaXZvdGFsMREwDwYDVQQLDAhJZGVudGl0eTEWMBQGA1UEAwwN
+        TWFyaXNzYSBLb2FsYTEgMB4GCSqGSIb3DQEJARYRbWtvYWxhQHBpdm90YWwuaW8w
+        gZ8wDQYJKoZIhvcNAQEBBQADgY0AMIGJAoGBAPVOIGvG8MFbkqi+ytdBHVbEGde4
+        jaCphmvGm89/4Ks0r+041VsS55XNYnHsxXTlh1FiB2KcbrDb33pgvuAIYpcAO2I0
+        gqGeRoS2hNsxzcFdkgSZn1umDAeoE4bCATrquN93KMcw/coY5jacUfb9P2CQztkS
+        e2o+QWtIaWYAvI3bAgMBAAGjUDBOMB0GA1UdDgQWBBTkEjA4CEjevAGfnPBciyXC
+        3v4zMzAfBgNVHSMEGDAWgBTkEjA4CEjevAGfnPBciyXC3v4zMzAMBgNVHRMEBTAD
+        AQH/MA0GCSqGSIb3DQEBCwUAA4GBAIEd8U32tkcvwG9qCOfe5raBENHM4ltTuhju
+        zZWIM5Ik1bFf6+rA71HVDD1Z5fRozidhMOl6mrrGShfu6VUjtqzctJeSjaOPIJL+
+        wvrXXcAkCYZ9QKf0sqlUWcIRy90nqrD5sL/rHAjNjxQ3lqIOj7yWOgty4LUzFQNr
+        FHiyd3T6
+        -----END CERTIFICATE-----
 
   #Branding/Customization
   login.branding.company_name:
@@ -163,6 +302,20 @@ properties:
     description: These links appear on the footer of all UAA pages. You may choose to add multiple urls for things like Support, Terms of Service etc.
     example:
       linkDisplayName: linkDisplayUrl
+  login.branding.banner.logo:
+    description: This is a base64 encoded PNG image which will be used as the banner on the UAA discovery login page
+  login.branding.banner.text:
+    description: This is text that will be used in the banner area on the UAA discovery login page if no banner logo is configured
+  login.branding.banner.textColor:
+    description: This is the color to be used for banner text if banner text is defined to be used on the UAA discovery login page
+  login.branding.banner.backgroundColor:
+    description: This is the color to be used for the background of the banner area on the UAA discovery login page
+  login.branding.banner.link:
+    description: This is the link to be used for the banner logo or banner text on the UAA discovery login page
+  login.branding.consent.text:
+    description: This text appears on registration and invitation after the words `I agree to` alongside a checkbox that must be selected before the user can continue.
+  login.branding.consent.link:
+    description: If `login.branding.consent.text` is set, the text after `I agree to` will be hyperlinked to this location.
   login.asset_base_url:
     description: "Deprecated in favor of branding properties. Base url for static assets, allows custom styling of the login server.  Use '/resources/pivotal' for Pivotal style."
     default: /resources/oss
@@ -221,15 +374,13 @@ properties:
       scope.tokens.read: View details of your approvals you have granted to this and other applications
       scope.tokens.write: Cancel the approvals like this one that you have granted to this and other applications
   login.logout.redirect.url:
-    description: "The Location of the redirect header following a logout of the the UAA (/logout.do)."
+    description: "The Location of the redirect header following a logout of the the UAA (/login)."
     default: /login
   login.logout.redirect.parameter.disable:
-    description: "When set to false, this allows an operator to leverage an open redirect on the UAA (/logout.do?redirect=google.com). No open redirect enabled"
-    default: true
+    description: "Deprecated as of v52/uaa-4.7.0. Value ignored. Value is always false. Will be removed in the future."
+    default: false
   login.logout.redirect.parameter.whitelist:
-    description: "A list of URLs. When this list is non null, including empty, and disable=false,
-    logout redirects are allowed, but limited to the whitelist URLs. If a redirect parameter value is not white
-    listed, redirect will be to the default URL."
+    description: "A list of URLs that are accepted and honored as values to the `/logout.do?redirect` parameter . If a redirect parameter value is not white listed, redirect will be to the default URL, /login or to the value of uaa.login.logout.redirect.url if set."
   login.prompt.username.text:
     description: "The text used to prompt for a username during login"
     default: Email
@@ -239,6 +390,10 @@ properties:
   login.idpDiscoveryEnabled:
     description: "IDP Discovery should be set to true if you have configured more than one identity provider for UAA. The discovery relies on email domain being set for each additional provider. This property will also enable a list of selectable accounts that have signed in via the browser."
     default: false
+  login.defaultIdentityProvider:
+    description: "This value can be set to the origin key of an identity provider. If set, the user will be directed to this identity provider automatically if no other identity provider is discovered or selected via login_hint. When not set, legacy chained authentication (where uaa is attempted first followed by ldap) is used."
+    example: uaa
+    default: null
 
   # Email
   login.notifications.url:
@@ -267,9 +422,13 @@ properties:
   # Delete actions
   uaa.delete:
     description: |
-      Contains a map of actions, each with a list of IDs. Possible delete actions are 'users' and 'clients'.
-      These will be deleted in the database (default zone).
-      Unrecognized map keys will be ignored
+      Contains a map of actions, each with a list of IDs.
+      Possible delete actions are 'identityProviders', 'users' and 'clients'.
+      Identity providers are identified by their alias
+      These will be deleted in the default (`uaa`) zone.
+      Unrecognized map keys will be ignored.
+      If the ID exists both in the delete and create sections
+      the delete section takes preceden
     example: |
       clients:
         - client-to-be-deleted-1
@@ -277,10 +436,76 @@ properties:
       users:
         - user-to-be-deleted-1
         - user-to-be-deleted-2
+      identityProviders:
+        - octa
+        - google
+
+  # client secret policy
+  uaa.client.secret.policy:
+    description: "The client secret policy for clients in the default zone."
+    example:
+      uaa:
+        client:
+          secret:
+            policy:
+              minLength: 0
+              maxLength: 255
+              requireUpperCaseCharacter: 0
+              requireLowerCaseCharacter: 0
+              requireDigit: 0
+              requireSpecialCharacter: 0
+  uaa.client.secret.policy.minLength:
+    description: "Minimum number of characters required for secret to be considered valid (defaults to 0)."
+  uaa.client.secret.policy.maxLength:
+    description: "Maximum number of characters required for secret to be considered valid (defaults to 255)."
+  uaa.client.secret.policy.requireUpperCaseCharacter:
+    description: "Minimum number of uppercase characters required for secret to be considered valid (defaults to 0)."
+  uaa.client.secret.policy.requireLowerCaseCharacter:
+    description: "Minimum number of lowercase characters required for secret to be considered valid (defaults to 0)."
+  uaa.client.secret.policy.requireDigit:
+    description: "Minimum number of digits required for secret to be considered valid (defaults to 0)."
+  uaa.client.secret.policy.requireSpecialCharacter:
+    description: "Minimum number of special characters required for secret to be considered valid (defaults to 0)."
+  uaa.client.secret.policy.global:
+    description: "The global client secret policy for clients in a zone. If the zone doesn't have a client secret policy, this one will be used."
+    example:
+      uaa:
+        client:
+          secret:
+            policy:
+              global:
+                minLength: 0
+                maxLength: 255
+                requireUpperCaseCharacter: 0
+                requireLowerCaseCharacter: 0
+                requireDigit: 0
+                requireSpecialCharacter: 0
+  uaa.client.secret.policy.global.minLength:
+    description: "Minimum number of characters required for secret to be considered valid (defaults to 0)."
+  uaa.client.secret.policy.global.maxLength:
+    description: "Maximum number of characters required for secret to be considered valid (defaults to 255)."
+  uaa.client.secret.policy.global.requireUpperCaseCharacter:
+    description: "Minimum number of uppercase characters required for secret to be considered valid (defaults to 0)."
+  uaa.client.secret.policy.global.requireLowerCaseCharacter:
+    description: "Minimum number of lowercase characters required for secret to be considered valid (defaults to 0)."
+  uaa.client.secret.policy.global.requireDigit:
+    description: "Minimum number of digits required for secret to be considered valid (defaults to 0)."
+  uaa.client.secret.policy.global.requireSpecialCharacter:
+    description: "Minimum number of special characters required for secret to be considered valid (defaults to 0)."
+
+  # Global client redirect URI configuration
+  uaa.client.redirect_uri.matching_mode:
+    description: |
+      When set to `legacy`, allow unsafe matching of redirect URIs.
+      For example, https://example.com would also match all subdomains and all paths of https://example.com.
+      When set to `exact`, will provide OAuth2 spec-compliant (RFC6749) exact redirect URI matching.
+    default: legacy
 
   # Clients
   uaa.clients:
-    description: "List of OAuth2 clients that the UAA will be bootstrapped with"
+    description: |
+      List of OAuth2 clients that the UAA will be bootstrapped with.
+      These will be created in the default (`uaa`) zone.
     example:
       login:
         id: login
@@ -310,6 +535,10 @@ properties:
         app-icon: iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAMAAAAoLQ9TAAAAD1BMVEWZttQvMDEoKisqKywAAAApvvoVAAAAGElEQVQYlWNgYUQBLAxMDCiAeXgLoHsfAD03AHOyfqy1AAAAAElFTkSuQmCC
   uaa.admin.client_secret:
     description: "Secret of the admin client - a client named admin with uaa.admin as an authority"
+
+  uaa.authentication.enable_uri_encoding_compatibility_mode:
+    description: "When enabled basic auth credentials will only be URI decoded when the `X-CF-ENCODED-CREDENTIALS` header is set to `true`"
+    default: false
 
   # Security policies (for the UAA zone)
   uaa.authentication.policy.lockoutAfterFailures:
@@ -413,11 +642,11 @@ properties:
     description: "Disallows refresh-token grant for any client for which the user has not approved the `uaa.offline_token` scope"
     default: false
   uaa.jwt.refresh.unique:
-      description: "If true, uaa will only issue one refresh token per client_id/user_id combination"
-      default: false
+    description: "Revokes existing refresh tokens for client-user combination when creating a new refresh token. Note: only applies if `uaa.jwt.revocable` is true."
+    default: false
   uaa.jwt.refresh.format:
-      description: "The format for the refresh token. Allowed values are `jwt`, `opaque`"
-      default: jwt
+    description: "The format for the refresh token. Allowed values are `jwt`, `opaque`"
+    default: jwt
 
   # Global security policies (for all zones)
   uaa.authentication.policy.global.lockoutAfterFailures:
@@ -467,6 +696,7 @@ properties:
   uaa.scim.users:
     description: |
       A list of users to be bootstrapped with authorities.
+      These will be created in the default (`uaa`) zone.
       Each entry supports the following format:
         Short OpenStruct:
           - name: username
@@ -519,21 +749,7 @@ properties:
             groups:
               my-test-group: 'My test group description'
               another-group: 'Another group description'
-
-  # Database
-  uaadb.address:
-    description: "The UAA database IP address"
-  uaadb.databases:
-    description: "The list of databases used in UAA database including tag/name"
-  uaadb.db_scheme:
-    description: "Database scheme for UAA DB"
-  uaadb.port:
-    description: "The UAA database Port"
-  uaadb.tls_enabled :
-    description: "Use TLS connection for UAA database"
-    default: false
-  uaadb.roles:
-    description: "The list of database Roles used in UAA database including tag/name/password"
+  # connection pool properties
   uaa.database.max_connections:
     description: "The max number of open connections to the DB from a running UAA instance"
     default: 100
@@ -559,6 +775,11 @@ properties:
   uaa.ldap.enabled:
     description: "Set to true to enable LDAP"
     default: false
+  uaa.ldap.override:
+    description: |
+      If the LDAP configuration has `override: false` set, the LDAP values will only be stored
+      in the database if the LDAP has not been configured yet.
+      If property is omitted, the default is override: true
   uaa.ldap.profile_type:
     description: "The file to be used for configuring the LDAP authentication. Options are: 'simple-bind', 'search-and-bind', 'search-and-compare'"
     default: search-and-bind
@@ -591,8 +812,6 @@ properties:
     default: "org.cloudfoundry.identity.uaa.ldap.DynamicPasswordComparator"
   uaa.ldap.sslCertificate:
     description: "Used with ldaps:// URLs. The certificate, if self signed, to be trusted by this connection."
-  uaa.ldap.sslCertificateAlias:
-    description: "Used with ldaps:// URLs. The certificate alias, to be trusted by this connection and stored in the keystore."
   uaa.ldap.ssl.skipverification:
     description: "Set to true, and LDAPS connection will not validate the server certificate."
     default: false
@@ -659,12 +878,36 @@ properties:
     description: "If set to false, only users pre-populated in the UAA user database will be allowed to authenticate via LDAP. If set to true, any user from LDAP will be allowed to authenticate and an internal user will be created if one does not yet exist."
     default: true
 
+  # Multifactor Authentication
+  login.mfa.providers:
+    description: "A list of providers and their configuration. Provider names must be alphanumeric. Currently only `google-authenticator` is supported with no additional attributes. Issuer is optional."
+    example:
+      myExampleProvider1:
+        type: google-authenticator
+        config:
+          providerDescription: test adding a google authenticator to the default zone
+          issuer: uaa
+    default: ~
+
+  login.mfa.providerName:
+    description: "The unique name of the MFA provider to use for default zone."
+    default: ~
+  login.mfa.enabled:
+    description: "Set true to enable Multi-factor Authentication (MFA) for the default zone. Defaults to false."
+    default: false
+
   # OpenID Connect/OAuth
 
   login.oauth.providers:
-    description: "Contains a hash of OpenID Connect/Oauth Identity Providers, the key will be used as the origin key for that provider, followed by key/value pairs. Presence of the userInfoUrl will mark it as an OpenID provider instead of OAuth."
+    description: |
+      Contains a hash of OpenID Connect/Oauth Identity Providers,
+      the key will be used as the origin key for that provider, followed by key/value pairs.
+      Presence of the userInfoUrl will mark it as an OpenID provider instead of OAuth.
+      If the provider has `override: false` set, the provider values will only be stored
+      in the database if the provider doesn't exist.
     example:
       my-oauth-provider:
+        override: false
         type: oauth2.0
         authUrl: <URL to the authorize endpoint of the provider>
         tokenUrl: <URL to the token endpoint of the provider>
@@ -708,6 +951,7 @@ properties:
         relyingPartySecret: <OIDC Client secret>
         skipSslValidation: false
         storeCustomAttributes: true
+        passwordGrantEnabled: false
         attributeMappings:
           given_name: <Attribute holding given name in the OIDC ID Token>
           family_name: <Attribute holding family name in the OIDC ID Token>
@@ -719,6 +963,16 @@ properties:
             attribute:
               name-of-attribute-in-uaa-id-token: name-of-attribute-in-provider-token
               name-of-other-attribute-in-uaa-id-token: name-of-other-attribute-in-provider-token
+        prompts:
+          - name: username
+            type: text
+            text: Email
+          - name: password
+            type: password
+            text: Password
+          - name: passcode
+            type: password
+            text: Temporary Authentication Code (Get on at /passcode)
 
   # Saml
   login.saml.entityid:
@@ -732,7 +986,7 @@ properties:
       If set it overrides the default.
       This URL should NOT have the schema (http:// or https:// prefix in it) instead just the hostname.
       The schema is derived by #{login.protocol} property.
-      The default value is #{uaa.url}.replaceFirst('uaa','login'), typically login.example.com
+      The default value is `p("uaa.url").sub("://uaa.", "://login.")`, typically login.example.com
       The UAA will display this link in the cf --sso call if there is a SAML provider enabled.
   login.saml.activeKeyId:
     description: |
@@ -905,9 +1159,15 @@ properties:
       lshe50nayKrT
       -----END CERTIFICATE----
   login.saml.providers:
-    description: "Contains a hash of SAML Identity Providers, the key is the IDP Alias, followed by key/value pairs. To learn more about how to setup a saml identity provider go to https://simplesamlphp.org"
+    description: |
+      Contains a hash of SAML Identity Providers,
+      the key is the IDP Alias, followed by key/value pairs.
+      To learn more about how to setup a saml identity provider go to https://simplesamlphp.org
+      If the provider has `override: false` set, the provider values will only be stored
+      in the database if the provider doesn't exist.
     example:
       my-identity-provider:
+        override: false
         metadataTrustCheck: false
         idpMetadata: http://my.identityprovider.com/saml2/idp/metadata.php
         nameID: urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress
@@ -935,6 +1195,11 @@ properties:
   login.saml.wantAssertionSigned:
     description: "Global property to request that external IDPs sign their SAML assertion before sending them to the UAA"
     default: true
+  login.saml.disableInResponseToCheck:
+    description: |
+      Disable InResponseToField SAML validation on the default zone. For non default zone, this flag is part of the zone configuration.
+      Please see: https://docs.spring.io/spring-security-saml/docs/current/reference/html/chapter-troubleshooting.html
+    default: false
   login.saml.signatureAlgorithm:
     description: "Signature hashing algorithm for SAML. Can be SHA1, SHA256, or SHA512."
     example: SHA256
@@ -945,15 +1210,18 @@ properties:
       The UAA uses this as a base domain for internal hostnames so that subdomain can be detected
       This defaults to the uaa.url property, and if not set, to login.<domain>
     default: ~
-  uaa.servlet.session-cookie:
+  uaa.servlet.session-store:
     description: |
-      Optional configuration of the UAA session cookie.
-      Defaults are the following key value pairs:
-        secure: <(boolean)this value if set, otherwise require_https>
-        http-only: <(boolean) - default to true. set HttpOnly flag on cookie.
-        max-age: <(int) lifetime in seconds of cookie - default to 30 minutes)
-        name: <(String) name of cookie, default is JSESSIONID>
-        comment: <(String) optional comment in cookie>
-        path: <(String) path for cookie, default is />
-        domain: <(String) domain for cookie, default is incoming request domain>
-    default: ~
+        Select the backend where user sessions will be stored
+        Valid options are:
+          memory (use an in memory map structure),
+          database (use the configured database as a session store)
+    default: memory
+  uaa.servlet.idle-timeout:
+    description: "UAA session idle timeout in seconds."
+    default: 1800
+  uaa.servlet.session-cookie.max-age:
+    description: |
+      Lifetime of the UAA session cookie in seconds.
+      If -1, will use 'Session' lifetime.
+    default: -1

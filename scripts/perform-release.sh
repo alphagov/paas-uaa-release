@@ -24,7 +24,7 @@ function usage {
     echo -e "Usage: ${GREEN}$(basename $0) bosh_release_version [branch_to_release_from/develop] [/path/to/private.yml]${NC}"
     echo -e "Usage: ${GREEN}$(basename $0) ${RED}11.4 v11.4-branch /path/to/private.yml${NC}"
     echo -e "\n\n${GREEN}$(basename $0)${NC} requires a completely pristine clone of ${CYAN}uaa-release${NC}, containing no uncommitted changes or untracked or ignored files."
-    echo -e "\nBefore performing the release, it is strongly recommended that you update blobs with ${GREEN}bosh sync blobs${NC}"
+    echo -e "\nBefore performing the release, it is strongly recommended that you update blobs with ${GREEN}bosh sync-blobs${NC}"
     echo -e "\nThe ${CYAN}uaa${NC} submodule should be bumped by checking out the appropriate version ${BOLD}tag (not the branch)${NC} and committing the submodule update before running ${GREEN}$(basename $0)${NC}"
     echo -e "Specify the new ${YELLOW}bosh_release_version${NC}. The script will update the relevant branches and tags."
     echo -e "\nFor a usual release, the ${YELLOW}branch_to_release_from${NC} should be develop. For patch releases, it should be a previous release."
@@ -38,13 +38,12 @@ function invalid_version {
 }
 
 function finalize_and_commit {
-    tarball=dev_releases/uaa/uaa-$1.tgz
-    #dryrun
-    bosh finalize release $tarball --dry-run --name uaa --version $1
+    tarball=/tmp/uaa-release.tgz
     #actual
-    bosh finalize release $tarball --name uaa --version $1
+    bosh finalize-release $tarball --name uaa --version $1
     #bosh generated files
-    git add .
+    git add releases/
+    git add .final_builds/
     git commit --no-verify -m "uaa-release version v${1}"
     local result=$2
     eval $result="`git rev-parse HEAD`"
@@ -65,8 +64,8 @@ function paste_master_release_metadata {
     cp -r $RELEASES/* releases/
     cp -r $FINAL_BUILDS/* .final_builds/
     git add releases .final_builds
-    if git commit -m "Update bosh release metadata information for version ${1}"; then
-        git push origin $1
+    if git commit -m "Update bosh release metadata information for upcoming release version ${1}"; then
+        git push origin HEAD -u
         echo -e "${CYAN}Release metadata merged${NC}"
     else
        echo -e "${CYAN}No merge required. No changes detected${NC}"
@@ -120,7 +119,7 @@ git fetch --all --prune > /dev/null
 # save the metadata files from master
 # this saves all metadata from master
 # into a temporary directory
-copy_master_release_metadata
+# copy_master_release_metadata
 
 echo -e "${CYAN}Creating bosh UAA-release ${GREEN} ${1} ${NC} using `bosh -v`"
 
@@ -140,67 +139,48 @@ fi
 git checkout $branch_to_release_from
 sub_update
 
-# perform chronological release on branch `releases/version`
-git checkout -b releases/$1
 # restore private.yml in case it got deleted
 cp /tmp/private.yml config/
 
 echo -e "${CYAN}Building tarball ${GREEN}${1}${NC} and tag with ${GREEN}v${1}${NC}"
 # create a release tar ball - and a dev release
-bosh create release --name uaa --version $1 --with-tarball
+bosh create-release --name uaa --version $1 --tarball=/tmp/uaa-release.tgz
 metadata_commit=''
 # finalize release, get commit SHA so that we can cherry pick it later
 finalize_and_commit $1 metadata_commit
-echo -e "${CYAN}Finalized metadata with commit SHA ${metadata_commit}${NC}"
+echo -e "${CYAN}Finalized metadata for release with commit SHA ${metadata_commit}${NC}"
 
 # tag the release and individual metadata
 echo -e "${CYAN}Tagging and pushing the release branch${NC}"
 git tag -a v${1} -m "$1 release"
 git push origin $branch_to_release_from --tags
 
-# go back to our original release branch
-# so that we can merge back ALL metadata to master
-git checkout $branch_to_release_from
-sub_update
-
-# clean out the old release
-rm releases/uaa/uaa-${1}.tgz
-
-# paste in our metadata from master and commit it
-paste_master_release_metadata $branch_to_release_from
-# restore private.yml in case it got deleted
-mv /tmp/private.yml config/
-
-echo -e "${CYAN}Generating metadata for master ${GREEN}${1}${NC} with tag ${GREEN}v${1}${NC}"
-metadata_commit=''
-# finalize release, get commit SHA so that we can cherry pick it later
-finalize_and_commit $1 metadata_commit
-echo -e "${CYAN}Finalized merge metadata with commit SHA ${metadata_commit}${NC}"
-
 # jump to master branch
 echo -e "${CYAN}Switching to master branch to prep for metadata migration${NC}"
 git checkout master
 git reset --hard origin/master
 sub_update
+finalize_and_commit $1 metadata_commit
 
-# merge release branch, with all metadata, to master
-# a patch release has a dot in it
-if [[ ${1} == *.* ]]; then
-    #patch releases, that contain dots, we cherry pick the commit metadata only
-    echo -e "${CYAN}Cherry picking metadata commit to master for release ${1} and sha ${metadata_commit}${NC}"
-    git cherry-pick ${metadata_commit}
-else
-    echo -e "${CYAN}Merging $branch_to_release_from to master${NC}"
-    # merge to master - accept the dev branch as resolutions for conflicts
-    git merge --no-ff ${branch_to_release_from} -m "Merge of branch ${branch_to_release_from} for release ${1}${NC}" -X theirs
-fi
+## merge release branch, with all metadata, to master
+## a patch release has a dot in it
+#if [[ ${1} == *.* ]]; then
+#    #patch releases, that contain dots, we cherry pick the commit metadata only
+#    echo -e "${CYAN}Cherry picking metadata commit to master for release ${1} and sha ${metadata_commit}${NC}"
+#    git cherry-pick ${metadata_commit}
+#else
+#    echo -e "${CYAN}Merging $branch_to_release_from to master${NC}"
+#    # merge to master - accept the dev branch as resolutions for conflicts
+#    git merge --no-ff ${branch_to_release_from} -m "Merge of branch ${branch_to_release_from} for release ${1}" -X theirs
+#fi
 
 # update develop (merge master to develop so that the next release won't have a conflict
 echo -e "${CYAN}Pushing master branch and release tags${NC}"
 git push origin master --tags
 echo -e "${CYAN}Merging master to develop to avoid conflicts in the future${NC}"
 git checkout develop
-git merge --no-ff master -m "Bumping develop with master contents in preparation of next release"
+git pull origin develop
+git merge master -m "Merge back master into develop to avoid future conflicts" -Xours
 git push origin develop
 
 # place the release on a branch, because rel-eng doesn't do git fetch --tags

@@ -1,18 +1,24 @@
 ---
 properties:
+  encryption:
+    active_key_label: key1
+    encryption_keys:
+      - label: key1
+        passphrase: my-passphrase
   uaadb:
     address: 10.244.0.30
     databases:
     - citext: true
       name: uaadb
       tag: uaa
-    db_scheme: sqlserver
+    db_scheme: mysql
     port: 1433
     roles:
     - name: uaaadmin
       password: admin
       tag: admin
   login:
+    defaultIdentityProvider: uaa
     home_redirect: http://deprecated.home.redirect
     saml:
       serviceProviderKey: |
@@ -74,6 +80,15 @@ properties:
     url: http://test.uaa.url
     login:
       client_secret: secret
+    limitedFunctionality:
+      whitelist:
+        endpoints:
+        - /oauth/authorize/**
+        - /oauth/token/**
+        - /check_token/**
+        methods:
+        - GET
+        - HEAD
     jwt:
       policy:
         active_key_id: key-1

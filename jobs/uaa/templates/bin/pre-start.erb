@@ -1,0 +1,140 @@
+#!/bin/bash
+
+set -euo pipefail
+
+function log {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S.%3N')] uaa-pre-start - $1"
+}
+
+function insert_cert {
+    echo "${1}" | /var/vcap/packages/uaa/jdk/bin/keytool -noprompt \
+        -import \
+        -trustcacerts \
+        -alias "${2}" \
+        -keystore $TRUST_STORE_FILE \
+        -storepass changeit
+}
+
+function insert_ldap_certs {
+    /var/vcap/packages/uaa/jdk/bin/keytool -noprompt \
+        -importcert -file $LDAP_CERTS_FILE \
+        -alias ldapcert \
+        -keystore $TRUST_STORE_FILE \
+        -storepass changeit
+}
+
+function build_new_cache_files {
+    rm -f ${UAA_CA_CERTS_FILE}
+    touch ${UAA_CA_CERTS_FILE}
+
+    <% p('uaa.ca_certs', []).each do |cert| %>
+        echo '<%= cert.strip %>' >> $UAA_CA_CERTS_FILE
+    <% end %>
+
+    log "Trying to run update-ca-certificates..."
+    # --certbundle is an undocumented flag in the update-ca-certificates script
+    # https://salsa.debian.org/debian/ca-certificates/blob/master/sbin/update-ca-certificates#L53
+    timeout --signal=KILL 180s /usr/sbin/update-ca-certificates -f -v --certbundle "$(basename "${OS_CERTS_FILE}")"
+}
+
+function new_cache_files_are_identical {
+    if [[ ! -f ${PERSISTENT_OS_CERTS_FILE} ]] || [[ ! -f ${PERSISTENT_LDAP_CERTS_FILE} ]] || [[ ! -f ${PERSISTENT_UAA_CA_CERTS_FILE} ]]; then
+      return 1
+    fi
+
+    diff $OS_CERTS_FILE $PERSISTENT_OS_CERTS_FILE > /dev/null && \
+        diff $LDAP_CERTS_FILE $PERSISTENT_LDAP_CERTS_FILE > /dev/null && \
+        diff $UAA_CA_CERTS_FILE $PERSISTENT_UAA_CA_CERTS_FILE > /dev/null
+
+    return
+}
+
+function build_trust_store_file {
+    log "Processing certificates for Java keystore..."
+
+    mkdir -p $PERSISTENT_CERTS_DIR
+    rm -f $TRUST_STORE_FILE
+    TEMP_CA_CERTS=$(mktemp -d)
+
+    cat $UAA_CA_CERTS_FILE $OS_CERTS_FILE |
+        awk "split_after==1{n++;split_after=0} /-----END CERTIFICATE-----/ {split_after=1} {print > (\"$TEMP_CA_CERTS/cert\" n \".pem\")}"
+
+    for cert in $TEMP_CA_CERTS/*; do
+        insert_cert "$(cat $cert)" "$(basename $cert)"
+    done
+
+    rm -rf $TEMP_CA_CERTS
+
+    # Only install LDAP certs if the file has non-whitespace contents
+    if grep -q '[^[:space:]]' $LDAP_CERTS_FILE; then
+      log "Installing LDAP certificate"
+      insert_ldap_certs
+      log "Installed LDAP certificate"
+    fi
+
+    chmod 0755 $TRUST_STORE_FILE
+
+    log "Java keystore creation completed"
+}
+
+function save_new_cache_files_to_persistent_disk {
+    cp $OS_CERTS_FILE $PERSISTENT_OS_CERTS_FILE
+    cp $UAA_CA_CERTS_FILE $PERSISTENT_UAA_CA_CERTS_FILE
+    cp $LDAP_CERTS_FILE $PERSISTENT_LDAP_CERTS_FILE
+}
+
+function process_certs {
+    build_new_cache_files
+    if ! new_cache_files_are_identical; then
+        build_trust_store_file
+    fi
+
+    insert_ssl_cert
+
+    save_new_cache_files_to_persistent_disk
+}
+
+function insert_ssl_cert {
+    log "Installing Server SSL certificate"
+
+    openssl pkcs12 -export -name uaa_ssl_cert \
+        -in /var/vcap/jobs/uaa/config/uaa.crt \
+        -out /var/vcap/data/uaa/uaa_keystore.p12 \
+        -password pass:k0*l*s3cur1tyr0ck$
+
+    log "Installed Server SSL certificate"
+}
+
+function configure_tomcat {
+    # When run with bpm, the vcap user does not have permissions to read
+    # files in the jobs and packages directories. Consequently, we move
+    # our tomcat installation into a directory where we have full permissions.
+    rm -rf /var/vcap/data/uaa/tomcat
+    mkdir -p /var/vcap/data/uaa/
+    cp -a /var/vcap/packages/uaa/tomcat /var/vcap/data/uaa/
+    cp -a /var/vcap/jobs/uaa/config/tomcat/* /var/vcap/data/uaa/tomcat/conf/
+    chown -R vcap:vcap /var/vcap/data/uaa/
+}
+
+log "Starting"
+
+TMP_DIR="$(mktemp -d)"
+PERSISTENT_CERTS_DIR=/var/vcap/data/uaa/cert-cache
+TRUST_STORE_FILE=$PERSISTENT_CERTS_DIR/cacerts
+
+OS_CERTS_FILE=/etc/ssl/certs/uaa-ca-certificates.crt
+PERSISTENT_OS_CERTS_FILE=$PERSISTENT_CERTS_DIR/os-certs-cache.txt
+
+UAA_CA_CERTS_FILE=$TMP_DIR/uaa-ca-certs-cache.txt
+PERSISTENT_UAA_CA_CERTS_FILE=$PERSISTENT_CERTS_DIR/uaa-ca-certs-cache.txt
+
+LDAP_CERTS_FILE=/var/vcap/jobs/uaa/config/ldap.crt
+PERSISTENT_LDAP_CERTS_FILE=$PERSISTENT_CERTS_DIR/ldap-certs-cache.txt
+
+process_certs
+
+configure_tomcat
+
+rm -rf $TMP_DIR
+
+log "Completed"

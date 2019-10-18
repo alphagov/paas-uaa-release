@@ -1,6 +1,6 @@
 # UAA release
 
-See [docs](https://github.com/cloudfoundry/bosh-micro-cli/blob/master/docs/uaa.md) in bosh-micro-cli.
+See [docs](https://github.com/cloudfoundry/uaa-release/blob/develop/docs/uaa.md) taken from bosh-micro-cli circa mid-2015.
 
 ## Configuring required properties for UAA start-up
 
@@ -60,10 +60,6 @@ Add the following properties to your manifest:
 
 `openssl x509 -sha256 -days 365 -in server.csr -signkey server.key -out selfsigned.crt`
 
-## Notes
-
-- The property `uaa.port` can't be set to `8989` because this port is used by BOSH to monitor the server.
-
 ## Contributing to uaa-release
 
 ### General workflow
@@ -83,28 +79,13 @@ Add the following properties to your manifest:
    [submit a pull request](https://help.github.com/articles/creating-a-pull-request)
    selecting `develop` as the target branch
 
-## Deploying to a bosh-lite environment
+## Java Runtime Environments
 
-   We have provided [a sample manifest](docs/bosh-lite-uaa-release.yml)
-   for a bosh-lite uaa-release deployment. 
-   Make sure you modify the director uuid in the manifest to match yours 
+   Java Runtime Environments are gracefully supplied by the Cloud Foundry Java Buildpack Team
 
-       bosh target 192.168.50.4
-       bosh login admin admin
-       bosh upload stemcell https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-trusty-go_agent --skip-if-exists
-       bosh deployment docs/bosh-lite-uaa-release.yml
-       bosh deploy
-    
-   After that you can get the IP address and add the hostname to your `/etc/hosts` file
-  
-   You may want to setup an entry in your `/etc/hosts`
-      
-      10.244.0.118    uaa-minimal.bosh-lite.com
-   
-
+   JDK - https://java-buildpack.cloudfoundry.org/openjdk-jdk/trusty/x86_64/index.yml
+   JRE - https://java-buildpack.cloudfoundry.org/openjdk/trusty/x86_64/index.yml
 
 ## Acknowledgements
 
-* The UAA team uses RubyMine, The Most Intelligent Ruby and Rails IDE
-  
-  [![RubyMine](https://raw.githubusercontent.com/fhanik/acknowledgment/master/icons/icon_RubyMine.png)](https://www.jetbrains.com/ruby/)
+* We'd like to extend a thank you to all our users, contributors and supporters!

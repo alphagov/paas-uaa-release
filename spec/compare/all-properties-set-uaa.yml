@@ -1,14 +1,19 @@
 ---
 name: uaa
+encryption:
+  active_key_label: key1
+  encryption_keys:
+    - label: key1
+      passphrase: 12345678
 disableInternalAuth: true
 disableInternalUserManagement: true
 issuer:
   uri: http://all-properties-set:8888/uaa
 spring_profiles: mysql,ldap
 logging:
-  config: "/var/vcap/jobs/uaa/config/log4j.properties"
+  config: "/var/vcap/jobs/uaa/config/log4j2.properties"
 database:
-  url: jdbc:mysql://10.244.0.30:5524/uaadb?useSSL=true
+  url: jdbc:mysql://10.244.0.30:5524/uaadb?useSSL=true&enabledSslProtocolSuites=TLSv1.2
   username: uaaadmin
   password: admin
   maxactive: 101
@@ -26,8 +31,12 @@ delete:
   users:
     - user-to-be-deleted-1
     - user-to-be-deleted-2
+  identityProviders:
+    - google
+    - octa
 
 authentication:
+  enableUriEncodingCompatibilityMode: false
   policy:
     lockoutAfterFailures: 5
     countFailuresWithinSeconds: 1200
@@ -106,6 +115,16 @@ jwt:
       format: opaque
 
 oauth:
+  client:
+    secret:
+      policy:
+        minLength: 8
+        maxLength: 128
+        requireUpperCaseCharacter: 1
+        requireLowerCaseCharacter: 3
+        requireDigit: 2
+        requireSpecialCharacter: 0
+        expireSecretInMonths: 7
   clients:
     cf:
       id: cf
@@ -149,9 +168,6 @@ oauth:
     - scim.me
     - cloud_controller.read
     - cloud_controller.write
-    - cloud_controller_service_permissions.read
-    - password.write
-    - uaa.user
     - approvals.me
     - oauth.approvals
     - notification_preferences.read
@@ -185,8 +201,8 @@ scim:
       - internal_group3
       - internal_group4
       - internal_group5
-require_https: false
 ldap:
+  override: false
   ldapdebug: Ldap configured through UAA
   profile:
     file: ldap/ldap-search-and-bind.xml
@@ -194,7 +210,6 @@ ldap:
     tls: simple
     skipverification: true
     sslCertificate: ldap-ssl-cert
-    sslCertificateAlias: ldap-ssl-cert-alias
   base:
     url: ldap://192.168.50.4:389/
     mailAttributeName: mail
@@ -232,9 +247,29 @@ logout:
   redirect:
     url: "/"
     parameter:
-      disable: true
+      disable: false
+
+require_https: true
+https_port: 33333
+
 uaa:
   url: http://all-properties-set:8888/uaa
+  limitedFunctionality:
+    statusFile: /var/vcap/data/uaa/test_bbr_limited_mode.lock
+    whitelist:
+      endpoints:
+      - /oauth/authorize/**
+      - /oauth/token/**
+      - /check_token/**
+      methods:
+      - GET
+      - HEAD
+  shutdown:
+    sleep: 10000
+  oauth:
+    redirect_uri:
+      allow_unsafe_matching: true
+
 links:
   global:
     passwd: "https://{zone.subdomain}.myaccountmanager.domain.com/z/{zone.id}/forgot_password"
@@ -246,6 +281,7 @@ links:
   homeRedirect: http://custom.home.redirect
 login:
   url: http://all-properties-set:8888/uaa
+  defaultIdentityProvider: uaa
   idpDiscoveryEnabled: true
   accountChooserEnabled: true
   entityBaseURL: http://all-properties-set:8888/uaa
@@ -375,6 +411,7 @@ login:
     signMetaData: true
     signRequest: true
     wantAssertionSigned: true
+    disableInResponseToCheck: true
     providers:
       my-identity-provider:
         metadataTrustCheck: false
@@ -389,6 +426,7 @@ login:
         idpMetadata: http://my.identityprovider.com/saml2/idp/metadata.php
         skipSslValidation: false
       CA_SM1:
+        override: false
         assertionConsumerIndex: 0
         attributeMappings:
           email: mail
@@ -463,6 +501,17 @@ login:
     footerLegalText: Legal text
     footerLinks:
       terms of service: http://terms.of.service/
+    banner:
+      logo: |
+        base 64 with line feeds
+        for banner logo
+      text: banner text
+      textColor: "#AABBCC"
+      backgroundColor: "#DDEEFF"
+      link: http://www.example.com
+    consent:
+      text: Terms and Conditions
+      link: http://www.example.com
   serviceProviderKeyPassword: ""
   serviceProviderCertificate: |
     -----BEGIN CERTIFICATE-----
@@ -507,9 +556,19 @@ login:
     waZKhM1W0oB8MX78M+0fG3xGUtywTx0D4N7pr1Tk2GTgNw==
     -----END RSA PRIVATE KEY-----
   selfServiceLinksEnabled: false
+  mfa:
+    enabled: true
+    providerName: myExampleProvider
+    providers:
+      myExampleProvider:
+        type: google-authenticator
+        config:
+          providerDescription: test google authenticator
+          issuer: google
   oauth:
     providers:
       my-oauth-provider:
+        override: false
         type: oidc1.0
         authUrl: http://authUrl
         tokenUrl: http://tokenUrl
@@ -528,6 +587,17 @@ login:
         relyingPartySecret: "<OIDC Client secret>"
         skipSslValidation: false
         storeCustomAttributes: false
+        passwordGrantEnabled: false
+        prompts:
+          - name: username
+            type: text
+            text: Email
+          - name: password
+            type: password
+            text: Password
+          - name: passcode
+            type: password
+            text: Temporary Authentication Code (Get on at /passcode)
         attributeMappings:
           given_name: first_name
           family_name: last_name
@@ -539,14 +609,10 @@ login:
           user.attribute.name-of-other-attribute-in-uaa-id-token: name-of-other-attribute-in-provider-token
 
 servlet:
+  session-store: memory
+  idle-timeout: 300
   session-cookie:
-    secure: true
-    http-only: true
     max-age: 1800
-    name: JSESSIONID
-    comment: null
-    path: "/"
-    domain: super.test.domain
 
 smtp:
   host: smtp_host

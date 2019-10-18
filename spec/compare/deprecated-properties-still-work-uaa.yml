@@ -1,14 +1,19 @@
 ---
 name: uaa
+encryption:
+  active_key_label: key1
+  encryption_keys:
+    - label: key1
+      passphrase: my-passphrase
 disableInternalAuth: false
 disableInternalUserManagement: false
 issuer:
   uri: http://test.uaa.url
-spring_profiles: sqlserver
+spring_profiles: mysql
 logging:
-  config: "/var/vcap/jobs/uaa/config/log4j.properties"
+  config: "/var/vcap/jobs/uaa/config/log4j2.properties"
 database:
-  url: jdbc:sqlserver://10.244.0.30:1433;databaseName=uaadb
+  url: jdbc:mysql://10.244.0.30:1433/uaadb?useSSL=true
   username: uaaadmin
   password: admin
   maxactive: 100
@@ -18,6 +23,7 @@ database:
   logabandoned: true
   abandonedtimeout: 300
 authentication:
+  enableUriEncodingCompatibilityMode: false
   policy:
     lockoutAfterFailures: 5
     countFailuresWithinSeconds: 1200
@@ -110,15 +116,34 @@ scim:
   userids_enabled: true
   user:
     override: true
-require_https: true
 assetBaseUrl: "/resources/oss"
 logout:
   redirect:
     url: "/login"
     parameter:
-      disable: true
+      disable: false
+
+require_https: true
+https_port: 8443
+
 uaa:
   url: http://test.uaa.url
+  limitedFunctionality:
+    statusFile: /var/vcap/data/uaa/bbr_limited_mode.lock
+    whitelist:
+      endpoints:
+      - /oauth/authorize/**
+      - /oauth/token/**
+      - /check_token/**
+      methods:
+      - GET
+      - HEAD
+  shutdown:
+    sleep: 5000
+  oauth:
+    redirect_uri:
+      allow_unsafe_matching: true
+
 links:
   passwd: "/forgot_password"
   signup: "/create_account"
@@ -188,6 +213,7 @@ login:
     -----END CERTIFICATE-----
 
   url: http://test.uaa.url
+  defaultIdentityProvider: uaa
   idpDiscoveryEnabled: false
   accountChooserEnabled: false
   entityBaseURL: http://test.uaa.url
@@ -206,8 +232,15 @@ login:
     signMetaData: true
     signRequest: true
     wantAssertionSigned: true
+    disableInResponseToCheck: false
 smtp:
   host: localhost
   port: 2525
   auth: false
   starttls: false
+
+servlet:
+  session-store: memory
+  idle-timeout: 1800
+  session-cookie:
+    max-age: -1
