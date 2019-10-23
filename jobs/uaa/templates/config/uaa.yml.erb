@@ -186,6 +186,7 @@
       'abandonedtimeout' => p('uaa.database.abandoned_timeout')
     },
     'authentication' => {
+      'enableUriEncodingCompatibilityMode' => p('uaa.authentication.enable_uri_encoding_compatibility_mode'),
       'policy' => {
         'lockoutAfterFailures' => p('uaa.authentication.policy.lockoutAfterFailures'),
         'countFailuresWithinSeconds' => p('uaa.authentication.policy.countFailuresWithinSeconds'),
@@ -565,19 +566,18 @@
     end
   end
 
-
-
-
-  servlet = {
-    'idle-timeout' => p('uaa.servlet.idle-timeout')
-  }
-  params['servlet'] = servlet
-
-  if_p('uaa.servlet.session-cookie') do |sessioncookie|
-    params['servlet']['session-cookie'] = {}
-    sessioncookie.each do |cookiename, cookievalue|
-      params['servlet']['session-cookie'][cookiename] = cookievalue
-    end
+  valid_session_stores = ['memory', 'database']
+  session_store = p('uaa.servlet.session-store')
+  if valid_session_stores.include?(session_store)
+    params['servlet'] = {
+      'session-store' => session_store,
+      'idle-timeout' => p('uaa.servlet.idle-timeout'),
+      'session-cookie' => {
+        'max-age' => p('uaa.servlet.session-cookie.max-age')
+      }
+    }
+  else
+    message = message + "\nuaa.servlet.session-store invalid. Must be one of #{valid_session_stores.join(', ')}"
   end
 
   #validate that we have all required parameters

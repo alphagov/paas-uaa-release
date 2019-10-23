@@ -36,6 +36,7 @@ delete:
     - octa
 
 authentication:
+  enableUriEncodingCompatibilityMode: false
   policy:
     lockoutAfterFailures: 5
     countFailuresWithinSeconds: 1200
@@ -608,15 +609,10 @@ login:
           user.attribute.name-of-other-attribute-in-uaa-id-token: name-of-other-attribute-in-provider-token
 
 servlet:
+  session-store: memory
   idle-timeout: 300
   session-cookie:
-    secure: true
-    http-only: true
     max-age: 1800
-    name: JSESSIONID
-    comment: null
-    path: "/"
-    domain: super.test.domain
 
 smtp:
   host: smtp_host
