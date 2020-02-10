@@ -10,6 +10,7 @@ templates:
   bin/health_check.erb: bin/health_check
   bin/pre-start.erb: bin/pre-start
   bin/post-start: bin/post-start
+  bin/dns/healthy.erb: bin/dns/healthy
 
   config/uaa.yml.erb: config/uaa.yml
   config/bpm.yml.erb: config/bpm.yml
@@ -223,6 +224,9 @@ properties:
   uaa.ssl.protocol_header:
     description: The header to look for to determine if ssl termination was performed by a front end load balancer.
     default: x-forwarded-proto
+  uaa.ssl.port_header:
+    description: The header to look for to determine the port where ssl termination was performed by a front end load balancer.
+    default: X-Forwarded-Port
   uaa.sslCertificate:
     description: "The server's ssl certificate. The default is a self-signed certificate and should always be replaced for production deployments"
     default: ''
