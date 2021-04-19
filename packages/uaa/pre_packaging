@@ -25,8 +25,8 @@ export PATH=$JAVA_HOME/bin:$PATH
 
 #build cloud foundry UAA war
 cd ${BUILD_DIR}/uaa
-export UAA_VERSION=v74.31.0
-GIT_DIR=$(find $RELEASE_DIR -path "*/modules/src/uaa") ./gradlew :clean :assemble --max-workers=4 -Pversion=${UAA_VERSION}
+export UAA_VERSION=v75.1.0
+GIT_DIR=$(find $RELEASE_DIR -path "*/modules/src/uaa") ./gradlew :clean :assemble -Pversion=${UAA_VERSION}
 cp uaa/build/libs/cloudfoundry-identity-uaa-${UAA_VERSION}.war ${BUILD_DIR}/uaa/cloudfoundry-identity-uaa.war
 cp statsd/build/libs/cloudfoundry-identity-statsd-${UAA_VERSION}.war ${BUILD_DIR}/uaa/cloudfoundry-identity-statsd.war
 cp server/build/libs/tomcat-listener-${UAA_VERSION}.jar ${BUILD_DIR}/uaa/tomcat-listener.jar

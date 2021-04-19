@@ -92,6 +92,9 @@ properties:
       enabled_skip_hostname_validation (use TLS but skip validation of common and alt names in the host certificate),
       enabled_skip_all_validation (use TLS but do not validate anything about the host certificate),
       disabled (do not use TLS)
+
+      The database's CA certificate required when TLS is enabled
+      should be added to the uaa.ca_certs configuration field.
     default: enabled
   uaadb.tls_protocols:
     description: |
@@ -180,9 +183,9 @@ properties:
   uaa.logging_level:
     description: Set UAA logging level.  (e.g. TRACE, DEBUG, INFO)
     default: DEBUG
-  uaa.logging_use_rfc3339:
-    description: "Sets the time format for log messages to be yyyy-MM-dd'T'HH:mm:ss.SSSXXX instead of yyyy-MM-dd HH:mm:ss.SSS"
-    default: false
+  uaa.logging.format.timestamp:
+    description: "Format for timestamp in component logs. Valid values are 'rfc3339', 'rfc3339-legacy', and 'deprecated'. 'rfc3339' sets the format to be {yyyy-MM-dd'T'HH:mm:ss.nnnnnn}{GMT+0}Z which is rfc3339 compliant but additionally has microsecond precision and is set to UTC timezone. 'rfc3339-legacy' sets the time format to be yyyy-MM-dd'T'HH:mm:ss.SSSXXX. 'deprecated' sets the time format to be yyyy-MM-dd HH:mm:ss.SSS."
+    default: rfc3339
   uaa.limitedFunctionality.statusFile:
     description: |
       The UAA checks for the presence of this file. If this file exists, the UAA will continue to function
@@ -668,6 +671,44 @@ properties:
   uaa.jwt.refresh.format:
     description: "The format for the refresh token. Allowed values are `jwt`, `opaque`"
     default: jwt
+
+  # cors settings
+  uaa.cors.default.allowed.headers:
+    description: "whitelist for allowed headers for non-xhr cors requests"
+    default: ~
+  uaa.cors.default.allowed.origin:
+    description: "whitelist for allowed origins for non-xhr cors requests"
+    default: ~
+  uaa.cors.default.allowed.uris:
+    description: "whitelist for allowed uris for non-xhr cors requests"
+    default: ~
+  uaa.cors.default.allowed.methods:
+    description: "whitelist for allowed methods for non-xhr cors requests"
+    default: ~
+  uaa.cors.default.allowed.credentials:
+    description: "whether to allow credentials to be sent over non-xhr cors requests"
+    default: ~
+  uaa.cors.default.max_age:
+    description: "how long the results of a preflight request is cached"
+    default: ~
+  uaa.cors.xhr.allowed.headers:
+    description: "whitelist for allowed headers for xhr cors requests"
+    default: ~
+  uaa.cors.xhr.allowed.origin:
+    description: "whitelist for allowed origins for xhr cors requests"
+    default: ~
+  uaa.cors.xhr.allowed.uris:
+    description: "whitelist for allowed uris for xhr cors requests"
+    default: ~
+  uaa.cors.xhr.allowed.methods:
+    description: "whitelist for allowed methods for xhr cors requests"
+    default: ~
+  uaa.cors.xhr.allowed.credentials:
+    description: "whether to allow credentials to be sent over xhr cors requests"
+    default: ~
+  uaa.cors.xhr.max_age:
+    description: "how long the results of a preflight request is cached"
+    default: ~
 
   # Global security policies (for all zones)
   uaa.authentication.policy.global.lockoutAfterFailures:
